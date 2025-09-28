@@ -145,17 +145,21 @@ pip install -r requirements-windows.txt
 ### ⚙️ 後端核心設定
 - settings.py 連線 MySQL
 ```python
+import pymysql
+pymysql.install_as_MySQLdb()
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'pet_monitor',
         'USER': 'root',
-        'PASSWORD': '12345678',
+        'PASSWORD': '',   # 如果有密碼要改
         'HOST': '127.0.0.1',
         'PORT': '3306',
         'OPTIONS': {'charset': 'utf8mb4'},
     }
 }
+
 
 INSTALLED_APPS = [
     'rest_framework',
@@ -211,11 +215,91 @@ CREATE TABLE pet_monitor_behavior (
 INSERT INTO pet_monitor_pet (name) VALUES ('小黑'), ('小白');
 ```
 
+
+
+### 建立資料表 & 啟動 Django
+```text
+python manage.py migrate
+python manage.py runserver 127.0.0.1:8000
+```
+
 - 開啟瀏覽器 → http://127.0.0.1:8000/
 - 首頁：即時串流、健康預測
 - 幫助：快速開始 + API 文件
 - 狀態：系統狀態檢查
 
+- 開啟首頁
+在瀏覽器打開：
+```text
+http://127.0.0.1:8000/
+```
+
+- 測試 Help 頁
+在瀏覽器打開：
+```text
+http://127.0.0.1:8000/help/
+```
+
+- 測試 Status 頁
+在瀏覽器打開：
+```text
+http://127.0.0.1:8000/status/
+```
+
+- 測試 API (後端)
+即時辨識 (假資料回應)
+```cmd
+curl http://127.0.0.1:8000/api/realtime/
+```
+✅ 應該會回：
+```json
+{
+  "current_behavior": "無檢測",
+  "confidence": 0.0,
+  "health_status": "normal"
+}
+```
+
+- 測試串流 API（開啟串流）
+```cmd
+curl http://127.0.0.1:8000/api/stream/video/
+```
+✅ 預期回應：
+```json
+{"ok": true}
+```
+
+- 測試串流 API（關閉串流）
+```cmd
+curl http://127.0.0.1:8000/api/stream/stop/
+```
+✅ 預期回應：
+```json
+{"stopped": true}
+```
+
+
+
+- 測試行為紀錄清單
+```cmd
+curl http://127.0.0.1:8000/api/behaviors/
+```
+✅ 預期回應：
+```json
+{"results":[]}
+```
+
+- 取得寵物清單
+http://127.0.0.1:8000/api/pets/
+```json
+{"results":[{"id":1,"name":"小黑"}]}
+```
+
+測試資料庫
+如果你有匯入 db_init.sql 到 MySQL，打開 phpMyAdmin 或 MySQL CLI，執行：
+```sql
+SELECT * FROM pet_monitor_pet;
+```
 
 ### Django 3.2 LTS 支援 MySQL 5.7
 ```text
@@ -225,7 +309,6 @@ PyMySQL==1.1.1
 ```
 
 ### weights
-
 - 把 NMS 改在 CPU 上做
 - 改 yolov7\utils\general.py 的 non_max_suppression()，在呼叫 NMS 前把資料搬到 CPU：找到這行（大約在函式中部）：
 ```python
@@ -238,7 +321,7 @@ i = torchvision.ops.nms(boxes.float().cpu(), scores.cpu(), iou_thres)
 ```
 
 - 修改 YOLOv7 的 models/experimental.py
-- 打開 yolov7/models/experimental.py，找到：
+打開 yolov7/models/experimental.py，找到：
 ```python
 ckpt = torch.load(w, map_location=map_location)  # load
 ```
