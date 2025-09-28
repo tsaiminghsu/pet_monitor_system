@@ -83,6 +83,7 @@ pet_monitor_system/
 │   ├── index.html             # 
 │   ├── help.html              # 
 │   └── status.html            #
+├── yolov7                     # 放 YOLOv7 原始碼
 ├── db_init.sql                # MySQL 初始化資料
 └── start.bat                  # 一鍵啟動 (Windows)
 ```
@@ -308,39 +309,6 @@ djangorestframework==3.14.0
 PyMySQL==1.1.1
 ```
 
-### weights
-- 把 NMS 改在 CPU 上做
-- 改 yolov7\utils\general.py 的 non_max_suppression()，在呼叫 NMS 前把資料搬到 CPU：找到這行（大約在函式中部）：
-```python
-i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
-```
-改成：
-```python
-# 在 CPU 上做 NMS（避免 CUDA 版 torchvision::nms 缺失）
-i = torchvision.ops.nms(boxes.float().cpu(), scores.cpu(), iou_thres)
-```
-
-- 修改 YOLOv7 的 models/experimental.py
-打開 yolov7/models/experimental.py，找到：
-```python
-ckpt = torch.load(w, map_location=map_location)  # load
-```
-改成:
-```python
-ckpt = torch.load(w, map_location=map_location, weights_only=False)  # load (PyTorch>=2.6)
-```
-設 weights_only=False 會回到舊行為；只在你信任權重來源時使用
-
-- **驗證安裝是否真的有 NMS CUDA 核心：**
-```python
-python - <<PY
-import torch, torchvision
-print('torch', torch.__version__, 'cuda', torch.version.cuda, 'is_available', torch.cuda.is_available())
-print('torchvision', torchvision.__version__)
-import torch.ops
-print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
-PY
-```
 
 # 確認 YOLOv7 + OpenCV 串流程式
 
@@ -396,6 +364,154 @@ for *xyxy, conf, cls in results.xyxy[0]:
                   (int(xyxy[2]), int(xyxy[3])), (0, 255, 0), 2)
 ```html
 
+
+### 修改
+1. stream/views.py
+我會在 gen_frames() 中：
+載入 YOLOv7 模型（torch）。
+每一幀送進模型推論。
+將偵測到的框框與分類（吃飯、上廁所、趴下）畫到 frame 上。
+再輸出為 MJPEG。
+範例程式片段：
+```python
+import torch
+
+# 載入模型（請確認 weights/best.pt 存在）
+MODEL_PATH = "weights/best.pt"
+model = torch.hub.load("WongKinYiu/yolov7", "custom", MODEL_PATH, trust_repo=True)
+
+def gen_frames():
+    cap = _open_camera()
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        # 推論
+        results = model(frame)
+        # 轉換成帶框的 numpy 影像
+        frame = results.render()[0]
+        # 輸出 JPEG
+        ok, buffer = cv2.imencode(".jpg", frame)
+        if ok:
+            yield (b'--frame\\r\\nContent-Type: image/jpeg\\r\\n\\r\\n' +
+                   buffer.tobytes() + b'\\r\\n')
+```
+
+- 整合效果
+你瀏覽 /video_feed/ → 即時看到鏡頭畫面 + YOLO 偵測框。
+偵測到的分類會顯示在框框上（如 eating, toilet, lying）。
+best.pt 需放在 weights/ 資料夾底下。
+
+# 進階應用
+這份程式會：
+
+載入 YOLOv7 模型（weights/best.pt）。
+使用 OpenCV 擷取攝影機影像。
+每一幀跑推論並繪製框框與標籤。
+透過 Django StreamingHttpResponse 輸出為 MJPEG。
+```python
+from django.http import StreamingHttpResponse
+from django.views.decorators import gzip
+import cv2
+import numpy as np
+import torch
+import os
+
+# 攝影機來源：0 = 內建攝影機；也可以改成 rtsp://... 或 http://...
+CAMERA_SOURCE = 0
+
+# 模型路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "weights", "best.pt")
+
+# 載入 YOLOv7 模型
+print(f"載入 YOLOv7 模型: {MODEL_PATH}")
+model = torch.hub.load("yolov7", "custom", path=MODEL_PATH, source="local")
+
+def _open_camera():
+    cap = cv2.VideoCapture(CAMERA_SOURCE)
+    if not cap.isOpened():
+        cap.open(CAMERA_SOURCE)
+    return cap
+
+def gen_frames():
+    cap = _open_camera()
+    if not cap or not cap.isOpened():
+        blank = (255 * np.ones((240, 320, 3), dtype=np.uint8))
+        ok, buffer = cv2.imencode('.jpg', blank)
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' +
+               buffer.tobytes() + b'\r\n')
+        return
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            # YOLO 推論
+            results = model(frame)
+            frame = results.render()[0]  # 取帶標註的影像
+
+            ok, buffer = cv2.imencode(".jpg", frame)
+            if not ok:
+                continue
+            jpg = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
+    finally:
+        cap.release()
+
+@gzip.gzip_page
+def video_feed(request):
+    return StreamingHttpResponse(gen_frames(),
+                                 content_type='multipart/x-mixed-replace; boundary=frame')
+```
+
+# 重點修復
+放置 YOLOv7 原始碼與權重
+pet_monitor_system/
+├── yolov7/                 ← 這裡放 github 專案（git clone 下來）
+│   ├── hubconf.py
+│   └── requirements.txt    （內含 numpy<1.24 的相依宣告）
+└── weights/
+    └── best.pt             ← 你的訓練權重
+
+
+
+### weights
+- 把 NMS 改在 CPU 上做
+- 改 yolov7\utils\general.py 的 non_max_suppression()，在呼叫 NMS 前把資料搬到 CPU：找到這行（大約在函式中部）：
+```python
+i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+```
+改成：
+```python
+# 在 CPU 上做 NMS（避免 CUDA 版 torchvision::nms 缺失）
+i = torchvision.ops.nms(boxes.float().cpu(), scores.cpu(), iou_thres)
+```
+
+- 修改 YOLOv7 的 models/experimental.py
+打開 yolov7/models/experimental.py，找到：
+```python
+ckpt = torch.load(w, map_location=map_location)  # load
+```
+改成:
+```python
+ckpt = torch.load(w, map_location=map_location, weights_only=False)  # load (PyTorch>=2.6)
+```
+設 weights_only=False 會回到舊行為；只在你信任權重來源時使用
+
+- **驗證安裝是否真的有 NMS CUDA 核心：**
+```python
+python - <<PY
+import torch, torchvision
+print('torch', torch.__version__, 'cuda', torch.version.cuda, 'is_available', torch.cuda.is_available())
+print('torchvision', torchvision.__version__)
+import torch.ops
+print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
+PY
+```
 
 
 ### 網頁展示
