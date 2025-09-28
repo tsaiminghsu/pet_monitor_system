@@ -1,11 +1,17 @@
-#環境檢查
+### 環境安裝
 
 - 下載 python-3.12.11-amd64.exe
-Python 3.12.11
 
 - 下載 AppServ    Apache + PHP + MYSQL
 Appserv-win32-8.6.0.exe
 https://sourceforge.net/projects/appserv/files/AppServ%20Open%20Project/8.6.0/appserv-win32-8.6.0.exe/download
+
+- 下載 YOLOv7
+```cmd
+git clone https://github.com/WongKinYiu/yolov7.git
+cd yolov7
+mkdir weights
+```
 
 - 開啟cmd命令提示字元
 ```cmd
@@ -13,9 +19,7 @@ python --version
 pip --version
 ```
 
-
-### 安裝套裝
-
+- 安裝 YOLOv7 必要套件
 ```text
 matplotlib>=3.2.2
 numpy>=1.26           # 放寬到 1.26+（你有 2.0.2，更高 OK）
@@ -36,19 +40,13 @@ psutil
 thop                 # 新增：YOLOv7 常用
 ```
 
-
-
-cd C:\Users\你的使用者名稱\Downloads\pet_monitor_mysql57_with_video
-
-# 建立虛擬環境，有看到venv資料夾就不要再操作這個步驟
-
-```cmd
-python -m venv venv
-venv\Scripts\activate
+- 安裝 PyTorch（Windows）CUDA 12.6
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-### 架構
-
+### 寵物監控系統說明
+- 架構
 ```text
 pet_monitor_system
 ├── 📦 requirements.txt # Python 依賴 
@@ -58,7 +56,107 @@ pet_monitor_system
 ├── 🤖 model/ # AI 檢測器 
 ├── 📺 stream/ # 串流處理 
 ├── 📄 templates/ # HTML 模板
+├──    yolov7 影像辨識
+├──    weights 放有yolov7 訓練出來的best.pt 模型權重
+├──    venv 虛擬環境(pip 安裝套件)
 ```
+- 創建專案資料夾
+```cmd
+cd C:\Users\你的使用者名稱\Downloads\pet_monitor_mysql57_with_video
+```
+
+- 建立虛擬環境，後面指令操作都在這個虛擬環境做
+```cmd
+python -m venv venv
+venv\Scripts\activate
+```
+
+- requirements-windows.txt
+```text
+# ==== Core numeric/science ====
+numpy==2.0.2
+scipy==1.16.2
+pandas==2.2.2
+pytz==2025.2
+python-dateutil==2.9.0.post0
+matplotlib==3.10.0
+seaborn==0.13.2
+
+# ==== CV / IO ====
+opencv-python==4.12.0.88
+Pillow==11.3.0
+
+# ==== YOLOv7 helpers ====
+PyYAML==6.0.2
+tqdm==4.67.1
+tensorboard==2.19.0
+protobuf==5.29.5
+psutil==5.9.5
+thop
+
+# ==== Networking (requests stack) ====
+requests==2.32.4
+urllib3==2.5.0
+chardet==5.2.0
+idna==3.10
+certifi==2025.8.3
+
+# ==== Torch / TorchVision are installed separately (see above) ====
+# (Do NOT pin here to avoid missing CUDA wheels on Windows)
+
+# ==== Extras to satisfy recent torch/torchvision import paths ====
+typing_extensions==4.15.0
+sympy==1.13.3
+packaging==25.0
+```
+
+- 在venv 虛擬環境值執行
+```cmd
+pip install -r requirements-windows.txt
+```
+
+
+
+
+
+
+### weights
+
+- 把 NMS 改在 CPU 上做
+- 改 yolov7\utils\general.py 的 non_max_suppression()，在呼叫 NMS 前把資料搬到 CPU：找到這行（大約在函式中部）：
+```python
+i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+```
+改成：
+```python
+# 在 CPU 上做 NMS（避免 CUDA 版 torchvision::nms 缺失）
+i = torchvision.ops.nms(boxes.float().cpu(), scores.cpu(), iou_thres)
+```
+
+- 修改 YOLOv7 的 models/experimental.py
+- 打開 yolov7/models/experimental.py，找到：
+```python
+ckpt = torch.load(w, map_location=map_location)  # load
+```
+改成:
+```python
+ckpt = torch.load(w, map_location=map_location, weights_only=False)  # load (PyTorch>=2.6)
+```
+設 weights_only=False 會回到舊行為；只在你信任權重來源時使用
+
+- **驗證安裝是否真的有 NMS CUDA 核心：**
+```python
+python - <<PY
+import torch, torchvision
+print('torch', torch.__version__, 'cuda', torch.version.cuda, 'is_available', torch.cuda.is_available())
+print('torchvision', torchvision.__version__)
+import torch.ops
+print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
+PY
+```
+
+
+
 
 ### 網頁展示
 
