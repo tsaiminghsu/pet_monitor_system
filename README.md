@@ -179,6 +179,50 @@ class Behavior(models.Model):
     duration = models.IntegerField(default=0)  # 秒
 ```
 
+### 📄 API 路由 (Django REST Framework)
+```text
+/api/pets/ → 取得寵物資料
+/api/behaviors/ → 行為記錄
+/api/realtime/ → 即時辨識結果
+/api/stream/video/ → 影像串流 (MJPEG)
+/api/stream/stop/ → 停止串流
+```
+
+### 🐬 MySQL 初始化 (db_init.sql)
+```text
+CREATE DATABASE IF NOT EXISTS pet_monitor CHARACTER SET utf8mb4;
+USE pet_monitor;
+
+CREATE TABLE pet_monitor_pet (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50)
+);
+
+CREATE TABLE pet_monitor_behavior (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    pet_id INT,
+    behavior VARCHAR(20),
+    confidence FLOAT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    duration INT DEFAULT 0,
+    FOREIGN KEY (pet_id) REFERENCES pet_monitor_pet(id)
+);
+
+INSERT INTO pet_monitor_pet (name) VALUES ('小黑'), ('小白');
+```
+
+- 開啟瀏覽器 → http://127.0.0.1:8000/
+- 首頁：即時串流、健康預測
+- 幫助：快速開始 + API 文件
+- 狀態：系統狀態檢查
+
+
+### Django 3.2 LTS 支援 MySQL 5.7
+```text
+Django==3.2.25
+djangorestframework==3.14.0
+PyMySQL==1.1.1
+```
 
 ### weights
 
