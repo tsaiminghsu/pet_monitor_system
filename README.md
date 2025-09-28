@@ -1,10 +1,10 @@
 ### 環境安裝
 
-- 下載 python-3.12.11-amd64.exe
+- 下載 python-3.12.11-amd64.exe (python 3.12.11 和 pip )
+[python-3.12.11-amd64.exe](https://coatl.dev/news/2025/06/05/python-3-12-11/)
 
-- 下載 AppServ    Apache + PHP + MYSQL
-Appserv-win32-8.6.0.exe
-https://sourceforge.net/projects/appserv/files/AppServ%20Open%20Project/8.6.0/appserv-win32-8.6.0.exe/download
+- 下載 Appserv-win32-8.6.0.exe  (Apache + PHP + MYSQL)
+[Appserv-win32-8.6.0.exe](https://sourceforge.net/projects/appserv/files/AppServ%20Open%20Project/8.6.0/appserv-win32-8.6.0.exe/download)
 
 - 下載 YOLOv7
 ```cmd
@@ -22,16 +22,16 @@ pip --version
 - 安裝 YOLOv7 必要套件
 ```text
 matplotlib>=3.2.2
-numpy>=1.26           # 放寬到 1.26+（你有 2.0.2，更高 OK）
+numpy>=1.26          
 opencv-python>=4.1.1
 Pillow>=7.1.2
 PyYAML>=5.3.1
 requests>=2.23.0
 scipy>=1.4.1
-torch>=1.7.0         # 你已有 2.8，不會動它
+torch>=1.7.0         
 torchvision>=0.8.1
 tqdm>=4.41.0
-protobuf>=4.25       # 放寬，避免降級
+protobuf>=4.25      
 tensorboard>=2.4.1
 pandas>=1.1.4
 seaborn>=0.11.0
@@ -80,10 +80,11 @@ pet_monitor_system/
 │   ├── views.py (MJPEG/RTSP)
 │   └── urls.py
 ├── templates/                 # HTML 頁面
-│   ├── index.html             # 
-│   ├── help.html              # 
-│   └── status.html            #
-├── yolov7                     # 放 YOLOv7 原始碼
+│   ├── index.html             # 首頁
+│   ├── help.html              # 幫助頁
+│   └── status.html            # 狀態頁
+├── yolov7/                    # 放 YOLOv7 原始碼
+├── model/                     # AI 檢測器 
 ├── db_init.sql                # MySQL 初始化資料
 └── start.bat                  # 一鍵啟動 (Windows)
 ```
@@ -99,7 +100,7 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-- requirements-windows.txt
+- requirements-windows.txt 內容如下:
 ```text
 # ==== Core numeric/science ====
 numpy==2.0.2
@@ -138,7 +139,7 @@ sympy==1.13.3
 packaging==25.0
 ```
 
-- 在venv 虛擬環境值執行
+- 在venv 虛擬環境值執行 requirements-windows.txt
 ```cmd
 pip install -r requirements-windows.txt
 ```
@@ -216,8 +217,6 @@ CREATE TABLE pet_monitor_behavior (
 INSERT INTO pet_monitor_pet (name) VALUES ('小黑'), ('小白');
 ```
 
-
-
 ### 建立資料表 & 啟動 Django
 ```text
 python manage.py migrate
@@ -229,20 +228,17 @@ python manage.py runserver 127.0.0.1:8000
 - 幫助：快速開始 + API 文件
 - 狀態：系統狀態檢查
 
-- 開啟首頁
-在瀏覽器打開：
+- 開啟首頁，在瀏覽器打開：
 ```text
 http://127.0.0.1:8000/
 ```
 
-- 測試 Help 頁
-在瀏覽器打開：
+- 測試 Help 頁，在瀏覽器打開：
 ```text
 http://127.0.0.1:8000/help/
 ```
 
-- 測試 Status 頁
-在瀏覽器打開：
+- 測試 Status 頁，在瀏覽器打開：
 ```text
 http://127.0.0.1:8000/status/
 ```
@@ -279,8 +275,6 @@ curl http://127.0.0.1:8000/api/stream/stop/
 {"stopped": true}
 ```
 
-
-
 - 測試行為紀錄清單
 ```cmd
 curl http://127.0.0.1:8000/api/behaviors/
@@ -290,19 +284,17 @@ curl http://127.0.0.1:8000/api/behaviors/
 {"results":[]}
 ```
 
-- 取得寵物清單
-http://127.0.0.1:8000/api/pets/
+- 取得寵物清單 http://127.0.0.1:8000/api/pets/
 ```json
 {"results":[{"id":1,"name":"小黑"}]}
 ```
 
-測試資料庫
-如果你有匯入 db_init.sql 到 MySQL，打開 phpMyAdmin 或 MySQL CLI，執行：
+測試資料庫匯入 db_init.sql 後到 MySQL 打開 phpMyAdmin 或 MySQL CLI，執行：
 ```sql
 SELECT * FROM pet_monitor_pet;
 ```
 
-### Django 3.2 LTS 支援 MySQL 5.7
+### 讓 Django 3.2 LTS 支援 MySQL 5.7
 ```text
 Django==3.2.25
 djangorestframework==3.14.0
@@ -312,8 +304,7 @@ PyMySQL==1.1.1
 
 # 確認 YOLOv7 + OpenCV 串流程式
 
-前端按下「開始監控」後，實際上應該呼叫 stream/ app 裡的串流邏輯（Django View 或單獨 Python 程式）。
-靜態 API → /api/realtime/ 回傳 JSON，沒有真的去讀攝影機 / mp4。
+- 前端按下「開始監控」後，實際上應該呼叫 stream/ app 裡的串流邏輯（Django View 或單獨 Python 程式）。
 
 👉 一個 OpenCV 串流程式，例如：
 ```python
@@ -342,8 +333,7 @@ def video_feed(request):
 path("video_feed/", video_feed, name="video_feed")
 ```
 
-- 前端 HTML (templates/index.html)
-把 <img> 指向後端串流 URL：
+- 前端 HTML (templates/index.html) 把 <img> 指向後端串流 URL：
 ```html
 <div>
   <h3>即時監控</h3>
@@ -367,7 +357,7 @@ for *xyxy, conf, cls in results.xyxy[0]:
 
 ### 修改
 1. stream/views.py
-我會在 gen_frames() 中：
+在 gen_frames() 中：
 載入 YOLOv7 模型（torch）。
 每一幀送進模型推論。
 將偵測到的框框與分類（吃飯、上廁所、趴下）畫到 frame 上。
@@ -397,18 +387,17 @@ def gen_frames():
                    buffer.tobytes() + b'\\r\\n')
 ```
 
-- 整合效果
-你瀏覽 /video_feed/ → 即時看到鏡頭畫面 + YOLO 偵測框。
-偵測到的分類會顯示在框框上（如 eating, toilet, lying）。
-best.pt 需放在 weights/ 資料夾底下。
+### 整合效果
+- 你瀏覽 /video_feed/ → 即時看到鏡頭畫面 + YOLO 偵測框。
+- 偵測到的分類會顯示在框框上（如 eating, toilet, lying）。
+- best.pt 需放在 weights/ 資料夾底下。
 
 # 進階應用
-這份程式會：
-
-載入 YOLOv7 模型（weights/best.pt）。
-使用 OpenCV 擷取攝影機影像。
-每一幀跑推論並繪製框框與標籤。
-透過 Django StreamingHttpResponse 輸出為 MJPEG。
+### 這份程式會有：
+- 載入 YOLOv7 模型（weights/best.pt）。
+- 使用 OpenCV 擷取攝影機影像。
+- 每一幀跑推論並繪製框框與標籤。
+- 透過 Django StreamingHttpResponse 輸出為 MJPEG。
 ```python
 from django.http import StreamingHttpResponse
 from django.views.decorators import gzip
@@ -491,8 +480,8 @@ i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
 i = torchvision.ops.nms(boxes.float().cpu(), scores.cpu(), iou_thres)
 ```
 
-- 修改 YOLOv7 的 models/experimental.py
-打開 yolov7/models/experimental.py，找到：
+### 修改 YOLOv7 的 models/experimental.py
+- 打開 yolov7/models/experimental.py，找到：
 ```python
 ckpt = torch.load(w, map_location=map_location)  # load
 ```
