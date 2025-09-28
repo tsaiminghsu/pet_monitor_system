@@ -83,7 +83,20 @@ pet_monitor_system/
 │   ├── index.html             # 首頁
 │   ├── help.html              # 幫助頁
 │   └── status.html            # 狀態頁
-├── yolov7/                    # 放 YOLOv7 原始碼
+├── yolov7/                    
+│   ├── hubconf.py                 # hubconf.py 會檢查 requirement 必要的安裝套件版本限制
+│   ├── models/
+│   │   ├── common.py
+│   │   ├── experimental.py
+│   │   └── ...
+├── utils/
+│   ├── augmentations.py   ✅ 這裡
+│   ├── general.py
+│   ├── torch_utils.py
+│   └── ...
+├── train.py
+├── detect.py
+└── ...
 ├── model/                     # AI 檢測器 
 ├── db_init.sql                # MySQL 初始化資料
 └── start.bat                  # 一鍵啟動 (Windows)
@@ -854,7 +867,26 @@ python manage.py makemigrations monitor
 python manage.py migrate monitor --fake
 ```
 
+# 🔧 YOLOv7 的 hubconf.py 卡控解決方式
 
+YOLOv7 的 hubconf.py 會執行這段：
+```python
+check_requirements(Path(__file__).parent / 'requirements.txt', exclude=('pycocotools', 'thop'))
+```
+
+這行會去讀 yolov7/requirements.txt，裡面寫著：
+```text
+protobuf<4.21.3
+```
+改成
+```text
+protobuf>=3.19.0
+```
+或者直接刪掉
+
+
+但實際上 torch + protobuf 5.x 在 Python 3.12 是 相容的。
+所以我們要 修改 yolov7/requirements.txt，讓它不要強制安裝舊版。
 
 ### 網頁展示
 
