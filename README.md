@@ -516,5 +516,5 @@ PY
 
 ### 網頁展示
 
-<img width="886" height="653" alt="截圖 2025-09-28 下午3 57 24" src="https://github.com/user-attachments/assets/f6c8bc15-b0a5-4d9d-bc00-698fa8b20067" />
-<img width="880" height="483" alt="截圖 2025-09-28 下午3 59 40" src="https://github.com/user-attachments/assets/218666ff-cc63-4616-a288-8a29af7ac9a5" />
+<img width="800" height="600" alt="截圖 2025-09-28 下午3 57 24" src="https://github.com/user-attachments/assets/f6c8bc15-b0a5-4d9d-bc00-698fa8b20067" />
+<img width="800" height="450" alt="截圖 2025-09-28 下午3 59 40" src="https://github.com/user-attachments/assets/218666ff-cc63-4616-a288-8a29af7ac9a5" />
