@@ -19,7 +19,7 @@ python --version
 pip --version
 ```
 
-- 安裝 YOLOv7 必要套件
+- 安裝 YOLOv7 必要套件 (以Windows 10,11 環境測試過可行，環境上安裝程度可以 80%，其他再看錯誤訊息依序 pip install 來解決)
 ```text
 matplotlib>=3.2.2
 numpy>=1.26          
@@ -40,7 +40,7 @@ psutil
 thop                 # 新增：YOLOv7 常用
 ```
 
-- 安裝 PyTorch（Windows）CUDA 12.6
+- 安裝 PyTorch（Windows）CUDA 12.6 ，測試過RTX2070和RTX3070顯示卡可以有效辨識，VRAM大效果會比較好
 ```
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
@@ -67,7 +67,7 @@ pet_monitor_system/
 ├── manage.py                  # Django 主入口
 ├── pet_monitor/               # Django 設定
 │   ├── __init__.py
-│   ├── settings.py            # 連線 MySQL / 靜態檔案 / REST Framework
+│   ├── settings.py            # 連線 MySQL / 靜態檔案 / Django REST Framework
 │   ├── urls.py                # 前端頁面與 API 路由
 │   └── wsgi.py
 ├── monitor/                   # 行為監控 (API + 模型結果寫入 DB)
@@ -77,7 +77,7 @@ pet_monitor_system/
 │   ├── urls.py
 │   └── ai_inference.py        # YOLOv7 + OpenCV 推論
 ├── stream/                    # 串流服務
-│   ├── views.py (MJPEG/RTSP)
+│   ├── views.py (MJPEG)
 │   └── urls.py
 ├── templates/                 # HTML 頁面
 │   ├── index.html             # 首頁
@@ -328,7 +328,7 @@ def gen_frames():
 def video_feed(request):
     return StreamingHttpResponse(gen_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
 ```
-然後在 urls.py 加一條：
+然後在 pet_monitor/urls.py 加一條：
 ```
 path("video_feed/", video_feed, name="video_feed")
 ```
@@ -466,8 +466,6 @@ pet_monitor_system/
 └── weights/
     └── best.pt             ← 你的訓練權重
 
-
-
 ### weights
 - 把 NMS 改在 CPU 上做
 - 改 yolov7\utils\general.py 的 non_max_suppression()，在呼叫 NMS 前把資料搬到 CPU：找到這行（大約在函式中部）：
@@ -501,7 +499,33 @@ import torch.ops
 print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
 PY
 ```
+### 進階應用排除方法
+- 辨識失敗的可能原因
+> 2.相機解析度 / 幀率太低
+- OpenCV 預設可能只抓到 640×480，導致小物件辨識不到。
+- 需要在 VideoCapture 裡設定解析度，例如：
+```python
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+cap.set(cv2.CAP_PROP_FPS, 30)
+```
 
+> 2.YOLOv7 推論圖片大小 (img-size) 太小1.
+- 如果 letterbox 預設用 640，對於小物件不夠清楚。
+- 可以改成 960 或 1280，但會增加 GPU 負擔。
+> 3.信心閾值 (confidence threshold) 設太高
+- 如果你用了 --conf 0.5，小物件可能被濾掉。
+- 建議調低到 0.25 左右。
+
+CUDA 沒完全啟用
+
+目前 torch 可以抓到 GPU，但推論可能仍在 CPU。
+
+確認 model.to(device) 和 img.to(device) 是否正確搬到 GPU。
+
+相機光線 / 鏡頭位置影響
+
+YOLO 模型對光線敏感，如果太暗或角度不好，框選會不穩。
 
 ### 網頁展示
 
