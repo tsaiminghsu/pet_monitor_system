@@ -342,6 +342,59 @@ print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
 PY
 ```
 
+# 確認 YOLOv7 + OpenCV 串流程式
+
+前端按下「開始監控」後，實際上應該呼叫 stream/ app 裡的串流邏輯（Django View 或單獨 Python 程式）。
+靜態 API → /api/realtime/ 回傳 JSON，沒有真的去讀攝影機 / mp4。
+
+👉 一個 OpenCV 串流程式，例如：
+```python
+# stream/views.py
+from django.http import StreamingHttpResponse
+import cv2
+
+def gen_frames():
+    cap = cv2.VideoCapture(0)  # 攝影機
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+        else:
+            # 轉成 JPEG
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+def video_feed(request):
+    return StreamingHttpResponse(gen_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+```
+然後在 urls.py 加一條：
+```
+path("video_feed/", video_feed, name="video_feed")
+```
+
+- 前端 HTML (templates/index.html)
+把 <img> 指向後端串流 URL：
+```html
+<div>
+  <h3>即時監控</h3>
+  <img id="stream" src="/video_feed/" width="640" height="480" />
+</div>
+```
+
+- 如果要加 YOLOv7 偵測
+在 gen_frames() 裡，把 frame 丟到 YOLOv7 模型跑，畫框後再送回瀏覽器。像這樣：
+```python
+# 假設已載入 yolo 模型
+results = model(frame)  # YOLO 偵測
+for *xyxy, conf, cls in results.xyxy[0]:
+    label = f"{model.names[int(cls)]} {conf:.2f}"
+    cv2.putText(frame, label, (int(xyxy[0]), int(xyxy[1]) - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    cv2.rectangle(frame, (int(xyxy[0]), int(xyxy[1])),
+                  (int(xyxy[2]), int(xyxy[3])), (0, 255, 0), 2)
+```html
 
 
 
