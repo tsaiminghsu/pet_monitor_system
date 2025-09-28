@@ -499,7 +499,7 @@ import torch.ops
 print('has torchvision nms:', hasattr(torch.ops.torchvision, 'nms'))
 PY
 ```
-### 進階應用排除方法
+### 🔍進階應用排除方法
 - 辨識失敗的可能原因
 > 2.相機解析度 / 幀率太低
 - OpenCV 預設可能只抓到 640×480，導致小物件辨識不到。
@@ -526,6 +526,335 @@ CUDA 沒完全啟用
 相機光線 / 鏡頭位置影響
 
 YOLO 模型對光線敏感，如果太暗或角度不好，框選會不穩。
+
+
+### 整合 GPU 使用、相機高畫質 (1280×720)、YOLOv7 推論最佳化：
+```python
+import cv2
+import torch
+import numpy as np
+from django.http import StreamingHttpResponse, JsonResponse
+from django.shortcuts import render
+from yolov7.models.experimental import attempt_load
+from yolov7.utils.general import non_max_suppression, scale_coords
+from yolov7.utils.datasets import letterbox
+
+# ---------------------------
+# YOLOv7 模型設定
+# ---------------------------
+WEIGHTS = "weights/best.pt"  # 請放到專案內的 weights/ 目錄
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+print(f"✅ 使用裝置: {DEVICE}")
+
+# 載入模型
+model = attempt_load(WEIGHTS, map_location=DEVICE)
+model.to(DEVICE)
+model.eval()
+print("✅ YOLOv7 模型載入完成")
+
+# 信心與 NMS 閾值
+CONF_THRES = 0.25
+IOU_THRES = 0.45
+IMG_SIZE = 640  # 可改 960 / 1280 提升效果
+
+# ---------------------------
+# 推論 & 繪製結果
+# ---------------------------
+def draw_results(frame, detections, names):
+    for *xyxy, conf, cls in detections:
+        label = f"{names[int(cls)]} {conf:.2f}"
+        xyxy = [int(x) for x in xyxy]
+        cv2.rectangle(frame, (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]), (0, 255, 0), 2)
+        cv2.putText(frame, label, (xyxy[0], xyxy[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    return frame
+
+def yolo_inference(frame):
+    img = letterbox(frame, IMG_SIZE)[0]
+    img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR → RGB
+    img = np.ascontiguousarray(img)
+    img = torch.from_numpy(img).to(DEVICE)
+    img = img.float() / 255.0
+    if img.ndimension() == 3:
+        img = img.unsqueeze(0)
+
+    # 模型推論
+    with torch.no_grad():
+        pred = model(img)[0]
+        pred = non_max_suppression(pred, CONF_THRES, IOU_THRES)
+
+    detections = []
+    for det in pred:
+        if det is not None and len(det):
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], frame.shape).round()
+            detections = det.cpu().numpy()
+    return detections
+
+# ---------------------------
+# 相機串流產生器
+# ---------------------------
+def gen_frames(cam_id=1):  # 預設使用 camera 1
+    cap = cv2.VideoCapture(cam_id)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+
+    names = model.names if hasattr(model, "names") else [str(i) for i in range(1000)]
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        detections = yolo_inference(frame)
+        frame = draw_results(frame, detections, names)
+
+        # 編碼輸出
+        ret, buffer = cv2.imencode(".jpg", frame)
+        frame = buffer.tobytes()
+        yield (b"--frame\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+
+    cap.release()
+
+# ---------------------------
+# Django 視圖
+# ---------------------------
+def index(request):
+    return render(request, "index.html")
+
+def video_feed(request):
+    cam_id = int(request.GET.get("source", 1))  # 可用 ?source=0 / 1 切換相機
+    return StreamingHttpResponse(gen_frames(cam_id),
+                                 content_type="multipart/x-mixed-replace; boundary=frame")
+
+def api_status(request):
+    return JsonResponse({"status": "ok", "device": DEVICE})
+```
+
+### 把「辨識到就回寫到資料庫」整進 stream/views.py。下面這份完整檔案會：
+
+以 YOLOv7 做推論（支援 CUDA，自動 fallback 到 CPU）
+
+串流 /video_feed/?source=<index>（index 用你的 camera 編號）
+
+每筆偵測到的物件（含信心值）→ 依門檻與節流規則寫入 pet_monitor_behavior 表
+
+提供查詢 API
+
+GET /api/realtime/：回傳最近一次辨識狀態
+
+GET /api/behaviors/：回傳最近 50 筆資料
+
+假設你已經在 monitor/models.py 定義了：
+```python
+class PetMonitorBehavior(models.Model):
+    behavior = models.CharField(max_length=100)
+    confidence = models.FloatField(default=0.0)
+    health_status = models.CharField(max_length=20, default="normal")
+    timestamp = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        db_table = "pet_monitor_behavior"
+```
+
+### 關於放入YOLOv7 資料夾後的  stream/views.py
+```python
+# stream/views.py
+import os
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+import torch
+from django.http import StreamingHttpResponse, JsonResponse, Http404
+from django.shortcuts import render
+from django.views.decorators.gzip import gzip_page
+from django.views.decorators.http import require_GET
+from monitor.models import PetMonitorBehavior
+
+# ========== YOLOv7 utils ==========
+from yolov7.utils.general import non_max_suppression, scale_coords, check_img_size
+from yolov7.utils.datasets import letterbox
+from yolov7.models.experimental import attempt_load
+from yolov7.utils.torch_utils import select_device
+
+# ========== 全域設定 ==========
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CAMERA_INDEX = 1   # 🔹固定 Camera 1
+WEIGHTS = str(PROJECT_ROOT / "weights" / "best.pt")
+
+# GPU / CPU 選擇
+device = select_device("0" if torch.cuda.is_available() else "cpu")
+print(f"[Init] 使用裝置: {device}")
+
+# 載入 YOLOv7
+print(f"[Init] 載入 YOLOv7 權重: {WEIGHTS}")
+model = attempt_load(WEIGHTS, map_location=device)
+model.eval()
+try:
+    model.fuse()
+except Exception:
+    pass
+print("✅ YOLOv7 模型載入完成")
+
+CONF_THRES = 0.25
+IOU_THRES = 0.45
+
+# YOLO labels
+names = model.module.names if hasattr(model, "module") else model.names
+
+# ========== Camera Open ==========
+def _open_capture(index: int):
+    print(f"[Camera] 嘗試開啟 index={index} via DSHOW")
+    cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        raise Http404(f"無法開啟攝影機 index={index}")
+
+    # 🔹鎖定解析度
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    return cap
+
+# ========== DB 回寫 ==========
+def save_detection(behavior: str, confidence: float, health_status: str = "normal"):
+    try:
+        PetMonitorBehavior.objects.create(
+            behavior=behavior,
+            confidence=float(confidence),
+            health_status=health_status,
+        )
+    except Exception as e:
+        print(f"[WARN] save_detection failed: {e}")
+
+# ========== 串流產生器 ==========
+def gen_frames(
+    source=DEFAULT_CAMERA_INDEX,
+    img_size=640,
+    conf_thres=0.25,
+    iou_thres=0.45,
+    health_status_default="normal",
+):
+    stride = 32
+    img_size = check_img_size(img_size, s=stride)
+
+    cap = _open_capture(int(source))
+
+    fail_count, MAX_FAIL = 0, 30
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                fail_count += 1
+                if fail_count >= MAX_FAIL:
+                    print(f"[Camera] 讀取失敗 {MAX_FAIL} 次，結束串流")
+                    break
+                time.sleep(0.1)
+                continue
+            else:
+                fail_count = 0
+
+            img0 = frame.copy()
+            lb = letterbox(img0, img_size, stride=stride, auto=True)[0]
+            img = lb[:, :, ::-1].transpose(2, 0, 1)
+            img = np.ascontiguousarray(img)
+            img = torch.from_numpy(img).to(device).float() / 255.0
+            if img.ndimension() == 3:
+                img = img.unsqueeze(0)
+
+            with torch.no_grad():
+                pred = model(img)[0]
+
+            pred = non_max_suppression(pred, conf_thres, iou_thres)[0]
+
+            if pred is not None and len(pred):
+                pred[:, :4] = scale_coords(img.shape[2:], pred[:, :4], img0.shape).round()
+                for *xyxy, conf, cls in pred:
+                    x1, y1, x2, y2 = map(int, xyxy)
+                    label = names[int(cls)]
+                    confidence = float(conf)
+
+                    save_detection(label, confidence, health_status_default)
+
+                    cv2.rectangle(img0, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(img0, f"{label} {confidence:.2f}",
+                                (x1, max(0, y1 - 5)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                (0, 255, 0), 2)
+
+            ok, buffer = cv2.imencode(".jpg", img0)
+            if not ok:
+                continue
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+    finally:
+        cap.release()
+        print("[Camera] 已釋放資源，串流結束")
+
+# ========== Django Views ==========
+def index(request):
+    return render(request, "index.html")
+
+@gzip_page
+@require_GET
+def api_video(request):
+    """固定 Camera 1 的 MJPEG 串流"""
+    return StreamingHttpResponse(
+        gen_frames(source=DEFAULT_CAMERA_INDEX),
+        content_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+@require_GET
+def realtime_status(request):
+    return JsonResponse({"status": "ok"})
+
+@require_GET
+def pets_api(request):
+    records = (
+        PetMonitorBehavior.objects.all()
+        .order_by("-timestamp")[:10]
+        .values("id", "behavior", "confidence", "health_status", "timestamp")
+    )
+    return JsonResponse(list(records), safe=False)
+```
+✅ 特點：
+- 直接鎖定 Camera 1（index=1, DSHOW, 1280×720）
+- /api/stream/video/ 會回傳 MJPEG 串流
+- 失敗 30 次會自動退出（避免卡死黑畫面）
+- YOLOv7 偵測結果會即時寫入 DB（PetMonitorBehavior）
+
+# 資料庫缺欄位 修復
+### 用 Django migrations 修好（建議）
+停掉 runserver（按 Ctrl+C）。
+確認 monitor 在 settings.py 的 INSTALLED_APPS 裡面。
+```cmd
+python manage.py makemigrations monitor
+```
+如果你看到它說已比對成功但欄位仍不在，代表剛才只做了對齊，還需要真正新增欄位的遷移檔。那就執行
+```cmd
+# 讓 Django 偵測差異後產生「新增欄位」的遷移
+python manage.py makemigrations monitor
+python manage.py migrate monitor
+```
+### 直接用 SQL 補欄位（快速修、跳過遷移）
+8 僅在你確定要手動改表、之後再讓遷移對齊時使用。
+```sql
+ALTER TABLE pet_monitor_behavior
+ADD COLUMN health_status VARCHAR(20) NOT NULL DEFAULT 'normal' AFTER confidence;
+```
+如果還沒有 confidence 欄位，先補它：
+```sql
+ALTER TABLE pet_monitor_behavior
+ADD COLUMN confidence DOUBLE NOT NULL DEFAULT 0 AFTER behavior;
+```
+補完後，讓 Django 遷移狀態對齊（避免之後遷移再想改同一欄位）：
+```cmd
+python manage.py makemigrations monitor
+python manage.py migrate monitor --fake
+```
+
+
 
 ### 網頁展示
 
