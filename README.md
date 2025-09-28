@@ -48,7 +48,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ### 寵物監控系統說明
 - 架構
 ```text
-pet_monitor_system
+pet_monitor_system/
 ├── 📦 requirements.txt # Python 依賴 
 ├── ⚙️ manage.py # Django 管理 
 ├── 🎯 pet_monitor/ # Django 主專案 
@@ -60,6 +60,33 @@ pet_monitor_system
 ├──    weights 放有yolov7 訓練出來的best.pt 模型權重
 ├──    venv 虛擬環境(pip 安裝套件)
 ```
+
+
+```text
+pet_monitor_system/
+├── manage.py                  # Django 主入口
+├── pet_monitor/               # Django 設定
+│   ├── __init__.py
+│   ├── settings.py            # 連線 MySQL / 靜態檔案 / REST Framework
+│   ├── urls.py                # 前端頁面與 API 路由
+│   └── wsgi.py
+├── monitor/                   # 行為監控 (API + 模型結果寫入 DB)
+│   ├── models.py              # Pet, Behavior
+│   ├── views.py               # REST API 實作
+│   ├── serializers.py
+│   ├── urls.py
+│   └── ai_inference.py        # YOLOv7 + OpenCV 推論
+├── stream/                    # 串流服務
+│   ├── views.py (MJPEG/RTSP)
+│   └── urls.py
+├── templates/                 # HTML 頁面
+│   ├── index.html             # 
+│   ├── help.html              # 
+│   └── status.html            #
+├── db_init.sql                # MySQL 初始化資料
+└── start.bat                  # 一鍵啟動 (Windows)
+```
+
 - 創建專案資料夾
 ```cmd
 cd C:\Users\你的使用者名稱\Downloads\pet_monitor_mysql57_with_video
@@ -115,9 +142,42 @@ packaging==25.0
 pip install -r requirements-windows.txt
 ```
 
+### ⚙️ 後端核心設定
+- settings.py 連線 MySQL
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'pet_monitor',
+        'USER': 'root',
+        'PASSWORD': '12345678',
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
+        'OPTIONS': {'charset': 'utf8mb4'},
+    }
+}
 
+INSTALLED_APPS = [
+    'rest_framework',
+    'monitor',
+    'stream',
+]
+```
 
+- monitor/models.py
+```python
+from django.db import models
 
+class Pet(models.Model):
+    name = models.CharField(max_length=50)
+
+class Behavior(models.Model):
+    pet = models.ForeignKey(Pet, on_delete=models.CASCADE)
+    behavior = models.CharField(max_length=20)  # eating, toilet, lying
+    confidence = models.FloatField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    duration = models.IntegerField(default=0)  # 秒
+```
 
 
 ### weights
