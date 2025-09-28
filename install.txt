@@ -1,0 +1,111 @@
+開啟cmd命令提示字元
+
+#環境檢查
+python --version
+pip --version
+
+cd C:\Users\kelvinc0110\Downloads\寵物辨識系統\pet_monitor_mysql57_with_video
+python -m venv venv#建立虛擬環境，有看到venv資料夾就不要再操作這個步驟
+venv\Scripts\activate
+
+pip install -r requirements.txt
+
+#pip install torch torchvision
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+
+
+cd C:\Users\kelvinc0110\Downloads\寵物辨識系統\pet_monitor_mysql57_with_video\yolov7
+pip install -r requirements-windows.txt
+
+cd ..
+
+建立資料表 & 啟動 Django
+cd C:\Users\kelvinc0110\Downloads\寵物辨識系統\pet_monitor_mysql57_with_video
+
+python manage.py migrate #有建立過資料庫就不要再重新下這個指令了，重複建立也會提示資料庫已建立
+python manage.py makemigrations monitor
+
+python manage.py runserver 127.0.0.1:8000
+
+
+#停掉 Django server (Ctrl + C)
+#刪掉 stream/__pycache__/ 資料夾（或整個專案的 __pycache__）
+rmdir /s /q stream\__pycache__
+
+
+開啟首頁
+http://127.0.0.1:8000/
+測試 Help 頁
+http://127.0.0.1:8000/help/
+測試 Status 頁
+http://127.0.0.1:8000/status/
+
+
+測試 API (後端)
+curl http://127.0.0.1:8000/api/pets/
+curl http://127.0.0.1:8000/api/behaviors/
+curl http://127.0.0.1:8000/api/behaviors/weekly_summary/
+curl http://127.0.0.1:8000/api/stream/video/
+curl http://127.0.0.1:8000/api/stream/stop/
+
+
+curl http://127.0.0.1:8000/api/realtime/ | jq .
+
+
+C:\Users\kelvinc0110>curl http://127.0.0.1:8000/api/pets/
+{"results": [{"id": 1, "name": "\u5c0f\u9ed1"}]}
+C:\Users\kelvinc0110>curl http://127.0.0.1:8000/api/behaviors/
+{"results": []}
+C:\Users\kelvinc0110>curl http://127.0.0.1:8000/api/behaviors/weekly_summary/
+{"week_data": [{"eating": 2, "toilet": 1}, {"eating": 3, "toilet": 1}, {"eating": 2, "toilet": 2}, {"eating": 4, "toilet": 2}, {"eating": 3, "toilet": 2}, {"eating": 3, "toilet": 1}, {"eating": 2, "toilet": 2}], "total_eating": 19, "total_toilet": 11, "avg_lying_duration": 5}
+C:\Users\kelvinc0110>curl http://127.0.0.1:8000/api/stream/video/
+{"ok": true}
+C:\Users\kelvinc0110>curl http://127.0.0.1:8000/api/stream/stop/
+{"stopped": true}
+
+
+
+
+退出venv
+deactivate
+
+
+venv 不會再被任何程式佔用，你就能刪除 venv 資料夾
+rmdir /s /q venv
+
+
+確認網路攝影機
+check_cuda.py
+
+from pathlib import Path
+p = Path('/content/yolov7/models/experimental.py')
+s = p.read_text()
+s_new = s.replace(
+    "ckpt = torch.load(w, map_location=map_location)  # load",
+    "ckpt = torch.load(w, map_location=map_location, weights_only=False)  # load (patched for torch>=2.6)"
+)
+p.write_text(s_new)
+print("✅ Patched models/experimental.py to use weights_only=False")
+
+
+
+python detect.py ^
+  --weights weights/best.pt ^
+  --source 0 ^
+  --img-size 640 ^
+  --conf 0.25 ^
+  --device 0
+
+
+python detect.py ^
+  --weights weights/best.pt ^
+  --source 0 ^
+  --img-size 640 ^
+  --conf 0.25 ^
+  --device cpu
+
+
+curl -X POST http://127.0.0.1:8000/api/detections/post/ -H "Content-Type: application/json"  -d "{\"behavior\":\"dog_eating\",\"confidence\":0.87,\"health_status\":\"normal\"}"
+
+
+避免又被 check_requirements() 亂裝 ipython/protobuf/numpy 之類，我們不透過 yolov7/hubconf.py，也就不會觸發它的自動檢查
