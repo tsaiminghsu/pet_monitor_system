@@ -890,5 +890,8 @@ protobuf>=3.19.0
 
 ### 網頁展示
 
-<img width="800" height="600" alt="截圖 2025-09-28 下午3 57 24" src="https://github.com/user-attachments/assets/f6c8bc15-b0a5-4d9d-bc00-698fa8b20067" />
-<img width="800" height="450" alt="截圖 2025-09-28 下午3 59 40" src="https://github.com/user-attachments/assets/218666ff-cc63-4616-a288-8a29af7ac9a5" />
+
+<img width="1000" height="950" alt="寵物智能監控系統_狗狗趴下" src="https://github.com/user-attachments/assets/d6933a09-7731-46a2-b449-885ec5f45608" />
+<img width="1000" height="950" alt="寵物智能監控系統_狗狗吃飯" src="https://github.com/user-attachments/assets/b6183956-fb33-4b7b-a44a-c3c64f87c7ea" />
+<img width="1000" height="900" alt="寵物智能監控系統_狗狗上廁所" src="https://github.com/user-attachments/assets/f81c39fa-014d-490b-9a66-4f393df366ab" />
+<img width="1000" height="800" alt="寵物智能監控系統_圖表" src="https://github.com/user-attachments/assets/f49bc1c7-fee2-480f-9d35-80639bc8bc32" />
