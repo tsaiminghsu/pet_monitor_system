@@ -888,6 +888,11 @@ protobuf>=3.19.0
 但實際上 torch + protobuf 5.x 在 Python 3.12 是 相容的。
 所以我們要 修改 yolov7/requirements.txt，讓它不要強制安裝舊版。
 
+### 架構圖
+
+<img width="938" height="625" alt="截圖 2025-10-03 晚上7 33 03" src="https://github.com/user-attachments/assets/9c9644df-cdf7-4dac-8921-6c130bc3881e" />
+
+
 ### 網頁展示
 
 
